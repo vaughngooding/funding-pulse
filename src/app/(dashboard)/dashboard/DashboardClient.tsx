@@ -134,10 +134,12 @@ export default function DashboardClient({
         return false
       }
 
-      // Amount range
+      // Amount range. amountMax at the slider ceiling (500M) means "$500M+",
+      // i.e. no upper bound — same semantics as explore/page.tsx.
       if (
         round.amount_usd < filters.amountMin ||
-        round.amount_usd > filters.amountMax
+        (filters.amountMax < 500_000_000 &&
+          round.amount_usd > filters.amountMax)
       ) {
         return false
       }
