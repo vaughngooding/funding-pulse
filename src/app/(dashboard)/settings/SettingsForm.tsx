@@ -81,7 +81,8 @@ export default function SettingsForm({
   })
   const [prefs, setPrefs] = useState({
     min_amount: initialPreferences.min_amount,
-    max_amount: initialPreferences.max_amount,
+    // null = no cap; the slider parks at its ceiling for that state.
+    max_amount: initialPreferences.max_amount ?? 500_000_000,
     funding_types: initialPreferences.funding_types,
     countries: initialPreferences.countries,
     industries: initialPreferences.industries,
@@ -397,7 +398,11 @@ export default function SettingsForm({
         {
           user_id: initialProfile.id,
           min_amount: prefs.min_amount,
-          max_amount: prefs.max_amount,
+          // Slider at the ceiling means "$500M+" — store null so the alert
+          // matcher applies no upper bound. A literal 500M silently drops
+          // every mega-round above it.
+          max_amount:
+            prefs.max_amount >= 500_000_000 ? null : prefs.max_amount,
           funding_types: prefs.funding_types,
           countries: prefs.countries,
           industries: prefs.industries,
@@ -533,7 +538,10 @@ export default function SettingsForm({
               </div>
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">
-                  Max: {formatAmountLabel(prefs.max_amount)}
+                  Max:{' '}
+                  {prefs.max_amount >= 500_000_000
+                    ? '$500M+ (no cap)'
+                    : formatAmountLabel(prefs.max_amount)}
                 </label>
                 <input
                   type="range"

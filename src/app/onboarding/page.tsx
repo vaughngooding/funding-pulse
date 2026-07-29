@@ -105,7 +105,8 @@ function OnboardingPageInner() {
 
   // Step 3: Funding range + types
   const [minAmount, setMinAmount] = useState(0)
-  const [maxAmount, setMaxAmount] = useState(100_000_000)
+  // Ceiling (500M) means "$500M+" — saved as null (no cap).
+  const [maxAmount, setMaxAmount] = useState(500_000_000)
   const [fundingTypes, setFundingTypes] = useState<string[]>([])
 
   // Step 4: Plan selection.
@@ -274,7 +275,7 @@ function OnboardingPageInner() {
         {
           user_id: user.id,
           min_amount: minAmount,
-          max_amount: maxAmount,
+          max_amount: maxAmount >= 500_000_000 ? null : maxAmount,
           funding_types: fundingTypes,
           countries,
           industries: [],
@@ -477,7 +478,9 @@ function OnboardingPageInner() {
                 <label className="flex items-center justify-between text-sm text-slate-300 mb-2">
                   <span>Maximum amount</span>
                   <span className="text-emerald-400 font-medium">
-                    {formatAmountLabel(maxAmount)}
+                    {maxAmount >= 500_000_000
+                      ? '$500M+ (no cap)'
+                      : formatAmountLabel(maxAmount)}
                   </span>
                 </label>
                 <input

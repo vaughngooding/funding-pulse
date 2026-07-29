@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import AlertCard from '@/components/AlertCard'
 import EarlyAlertCard from '@/components/EarlyAlertCard'
 import FilterSidebar, { type FilterState } from '@/components/FilterSidebar'
 import type { UserAlert, FundingRound, EarlyAlert, Plan } from '@/lib/types'
 import { canUseProFeatures } from '@/lib/access'
+import { createClient } from '@/lib/supabase/client'
 
 type ViewMode = 'matches' | 'all' | 'early-alerts'
 
@@ -96,12 +97,44 @@ export default function DashboardClient({
     countries: [],
   })
 
+  // The server only ships the latest 200 rounds for the 'all' firehose. When
+  // the user searches in 'all' mode, query the full table so every round in
+  // history is findable, not just the loaded window.
+  const [searchedRounds, setSearchedRounds] = useState<FundingRound[] | null>(null)
+  useEffect(() => {
+    const q = search.trim()
+    if (viewMode !== 'all' || q.length < 2) {
+      setSearchedRounds(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('funding_rounds')
+        .select('*')
+        .ilike('company_name', `%${q}%`)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      if (!cancelled && !error) {
+        setSearchedRounds((data as FundingRound[]) || [])
+      }
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [search, viewMode])
+
   // The active dataset depends on the view mode. Rounds in 'all' mode are
   // wrapped as synthetic alerts so the same filter + render pipeline works.
   // 'early-alerts' uses its own dataset + render path (different schema).
   const activeAlerts = useMemo(
-    () => (viewMode === 'matches' ? alerts : allRounds.map(roundToSyntheticAlert)),
-    [viewMode, alerts, allRounds],
+    () =>
+      viewMode === 'matches'
+        ? alerts
+        : (searchedRounds ?? allRounds).map(roundToSyntheticAlert),
+    [viewMode, alerts, allRounds, searchedRounds],
   )
 
   // Early alerts filter: server already applies status + stage_category.

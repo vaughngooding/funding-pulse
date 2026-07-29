@@ -80,7 +80,7 @@ export interface UserPreferences {
   id: string
   user_id: string
   min_amount: number
-  max_amount: number
+  max_amount: number | null
   funding_types: string[]
   countries: string[]
   industries: string[]

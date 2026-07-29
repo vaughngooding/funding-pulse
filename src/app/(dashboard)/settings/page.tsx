@@ -38,7 +38,7 @@ export default async function SettingsPage() {
     id: '',
     user_id: user.id,
     min_amount: 0,
-    max_amount: 100_000_000,
+    max_amount: null,
     funding_types: [],
     countries: [],
     industries: [],
