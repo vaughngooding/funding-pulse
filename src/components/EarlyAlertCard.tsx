@@ -28,15 +28,25 @@ function daysAgo(iso: string): number {
   return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000))
 }
 
+// Filings this size confirm at 3-4x the rate of smaller ones — give them
+// a visually distinct card so they read as the priority signals.
+const BIG_FILING_USD = 20_000_000
+
 export default function EarlyAlertCard({ alert }: { alert: EarlyAlert }) {
   const age = daysAgo(alert.form_d_filing_date)
   const stageLabel = STAGE_LABEL[alert.stage_category] ?? alert.stage_category
   const stageColor =
     STAGE_COLOR[alert.stage_category] ??
     'bg-slate-700/40 text-slate-300 border-slate-600'
+  const isBig = (alert.amount_usd ?? 0) >= BIG_FILING_USD
 
   return (
-    <article className="rounded-lg border border-slate-700/60 bg-slate-900/60 p-4">
+    <article
+      className={`rounded-lg border p-4 ${
+        isBig
+          ? 'border-emerald-500/40 bg-emerald-950/20'
+          : 'border-slate-700/60 bg-slate-900/60'
+      }`}>
       {/* Top row: name + amount + age + stage badge */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-baseline gap-3 flex-wrap">

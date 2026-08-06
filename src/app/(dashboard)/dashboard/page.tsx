@@ -9,10 +9,11 @@ export const revalidate = 0
 
 const ALL_ROUNDS_LIMIT = 200
 
-// Customer-facing default: hide post-Series-A and later from the Early
-// Alerts toggle. The internal HTML dashboard surfaces them in a separate
-// audit tab; the customer view focuses on first-round / seed / Series A.
-const EARLY_ALERTS_SHOW_STAGES = ['no_prior', 'seed_prior', 'ambiguous']
+// Customer-facing stages. Audit 2026-07-29: series_a_prior produced the
+// most genuine early catches with the longest leads (Maneva 28d, Prime
+// Intellect-class rounds), so it's shown; ambiguous produced zero genuine
+// leads ever, so it's hidden. later_stage stays internal-only.
+const EARLY_ALERTS_SHOW_STAGES = ['no_prior', 'seed_prior', 'series_a_prior']
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -52,7 +53,10 @@ export default async function DashboardPage() {
       .select('*')
       .in('status', ['active', 'confirmed'])
       .in('stage_category', EARLY_ALERTS_SHOW_STAGES)
-      .order('form_d_filing_date', { ascending: false }),
+      // Bigger filings confirm at 3-4x the rate of small ones ($20-100M:
+      // 20% vs $5-20M: 8%) — surface size within each filing day.
+      .order('form_d_filing_date', { ascending: false })
+      .order('amount_usd', { ascending: false, nullsFirst: false }),
   ])
 
   if (alertsResult.error) {
