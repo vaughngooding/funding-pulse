@@ -98,6 +98,74 @@ async function verifyStripeSignature(
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+const STRIPE_AUTH = {
+  Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+  'Content-Type': 'application/x-www-form-urlencoded',
+}
+
+// Duplicate-subscription guard (2026-08-25). Nothing used to cancel a
+// user's existing subscription when they bought a new plan, so every
+// trial/Basic -> Pro upgrade left TWO live subscriptions billing in
+// parallel (first reported by a customer double-charged $19.99 + $89).
+// After a paid subscription checkout completes, cancel every OTHER
+// active/trialing subscription for this customer — including subscriptions
+// under a different Stripe customer record with the same email (checkout
+// used customer_email, which can mint a second customer object).
+// Fail-soft: errors are logged, never thrown — the webhook must succeed.
+async function cancelOtherSubscriptions(
+  newSubId: string,
+  customerId: string | null,
+  email: string | null,
+): Promise<void> {
+  try {
+    const customerIds = new Set<string>()
+    if (customerId) customerIds.add(customerId)
+
+    if (email) {
+      const q = encodeURIComponent(`email:'${email.replace(/'/g, '')}'`)
+      const res = await fetch(
+        `https://api.stripe.com/v1/customers/search?query=${q}&limit=10`,
+        { headers: STRIPE_AUTH },
+      )
+      if (res.ok) {
+        const data = await res.json()
+        for (const c of data.data ?? []) customerIds.add(c.id)
+      } else {
+        console.warn('dup-sub guard: customer search failed', res.status)
+      }
+    }
+
+    for (const cid of customerIds) {
+      const res = await fetch(
+        `https://api.stripe.com/v1/subscriptions?customer=${cid}&status=all&limit=20`,
+        { headers: STRIPE_AUTH },
+      )
+      if (!res.ok) {
+        console.warn(`dup-sub guard: sub list failed for ${cid}`, res.status)
+        continue
+      }
+      const subs = await res.json()
+      for (const sub of subs.data ?? []) {
+        if (sub.id === newSubId) continue
+        if (!['active', 'trialing', 'past_due'].includes(sub.status)) continue
+        const del = await fetch(`https://api.stripe.com/v1/subscriptions/${sub.id}`, {
+          method: 'DELETE',
+          headers: STRIPE_AUTH,
+        })
+        if (del.ok) {
+          console.log(
+            `dup-sub guard: canceled ${sub.id} (${sub.status}) on ${cid} — superseded by ${newSubId}`,
+          )
+        } else {
+          console.error(`dup-sub guard: cancel FAILED for ${sub.id}`, del.status, await del.text())
+        }
+      }
+    }
+  } catch (e) {
+    console.error('dup-sub guard: unexpected error (webhook continues)', e)
+  }
+}
+
 async function handleCheckoutCompleted(session: Record<string, unknown>) {
   // Match Stripe session → Supabase profile via metadata.user_id (preferred)
   // or case-insensitive email lookup.
@@ -132,6 +200,7 @@ async function handleCheckoutCompleted(session: Record<string, unknown>) {
     ((session.customer_details as Record<string, unknown> | null)?.email as string | null)
 
   const stripeCustomerId = session.customer as string | null
+
 
   // Resolve the target profile id. Prefer metadata.user_id (set by
   // /api/create-checkout from supabase.auth.getUser() — guaranteed to be
@@ -217,6 +286,19 @@ async function handleCheckoutCompleted(session: Record<string, unknown>) {
     console.log(
       `checkout.session.completed: set plan=${newPlan} for profile ${targetProfileId} ` +
         `(intended=${intendedPlan})`,
+    )
+  }
+
+  // Duplicate-subscription guard runs LAST so the profile's
+  // stripe_customer_id already points at the new customer before the old
+  // subscription's customer.subscription.deleted event can arrive — that
+  // event matches profiles by customer id and would otherwise race a
+  // momentary plan='free' downgrade.
+  if ((session.mode as string) === 'subscription' && session.subscription) {
+    await cancelOtherSubscriptions(
+      session.subscription as string,
+      stripeCustomerId,
+      customerEmail,
     )
   }
 }
